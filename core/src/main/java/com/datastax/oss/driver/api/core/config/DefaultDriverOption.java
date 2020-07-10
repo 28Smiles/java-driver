@@ -808,14 +808,20 @@ public enum DefaultDriverOption implements DriverOption {
    * <p>Value-type: int
    */
   SESSION_LEAK_THRESHOLD("advanced.session-leak.threshold"),
+
   /**
-   * The period of inactivity after which the node level metrics will be evicted. The eviction will
-   * happen only if none of the enabled node-level metrics is updated for a given node within this
-   * time window.
+   * The fully-qualified classname of the desired MetricsFactory implementation.
    *
-   * <p>Value-type: {@link java.time.Duration Duration}
+   * <p>Value-type: {@link String}
    */
-  METRICS_NODE_EXPIRE_AFTER("advanced.metrics.node.expire-after"),
+  METRICS_FACTORY_CLASS("advanced.metrics.factory.class"),
+
+  /**
+   * The fully-qualified classname of the desired metrics registry implementation.
+   *
+   * <p>Value-type: {@link String}
+   */
+  METRICS_FACTORY_REGISTRY_CLASS("advanced.metrics.factory.registry.class"),
   ;
 
   private final String path;

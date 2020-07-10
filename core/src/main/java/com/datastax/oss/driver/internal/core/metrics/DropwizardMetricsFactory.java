@@ -20,6 +20,7 @@ import com.datastax.dse.driver.api.core.metrics.DseNodeMetric;
 import com.datastax.dse.driver.api.core.metrics.DseSessionMetric;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
+import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.core.metrics.DefaultNodeMetric;
 import com.datastax.oss.driver.api.core.metrics.DefaultSessionMetric;
@@ -59,7 +60,7 @@ public class DropwizardMetricsFactory implements MetricsFactory {
 
   public DropwizardMetricsFactory(InternalDriverContext context, Ticker ticker) {
     this.logPrefix = context.getSessionName();
-    this.context = context;
+    this.context = (InternalDriverContext) context;
 
     DriverExecutionProfile config = context.getConfig().getDefaultProfile();
     Set<SessionMetric> enabledSessionMetrics =
@@ -92,7 +93,7 @@ public class DropwizardMetricsFactory implements MetricsFactory {
     } else {
       this.registry = new MetricRegistry();
       DropwizardSessionMetricUpdater dropwizardSessionUpdater =
-          new DropwizardSessionMetricUpdater(enabledSessionMetrics, registry, context);
+          new DropwizardSessionMetricUpdater(enabledSessionMetrics, registry, this.context);
       this.sessionUpdater = dropwizardSessionUpdater;
       this.metrics = new DefaultMetrics(registry, dropwizardSessionUpdater);
     }
