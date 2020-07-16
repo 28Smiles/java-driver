@@ -703,10 +703,6 @@ public class TypedDriverOption<ValueT> {
   /** The fully-qualified classname of the desired MetricsFactory implementation. */
   public static final TypedDriverOption<String> METRICS_FACTORY_CLASS =
       new TypedDriverOption<>(DefaultDriverOption.METRICS_FACTORY_CLASS, GenericType.STRING);
-  /** The fully-qualified classname of the desired metrics registry implementation. */
-  public static final TypedDriverOption<String> METRICS_FACTORY_REGISTRY_CLASS =
-      new TypedDriverOption<>(
-          DefaultDriverOption.METRICS_FACTORY_REGISTRY_CLASS, GenericType.STRING);
 
   /** The time after which the node level metrics will be evicted. */
   public static final TypedDriverOption<Duration> METRICS_NODE_EXPIRE_AFTER =
