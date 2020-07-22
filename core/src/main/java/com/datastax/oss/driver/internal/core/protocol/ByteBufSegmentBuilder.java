@@ -75,17 +75,17 @@ public class ByteBufSegmentBuilder extends SegmentBuilder<ByteBuf, ChannelPromis
   @Override
   @NonNull
   protected List<ChannelPromise> splitState(@NonNull ChannelPromise framePromise, int sliceCount) {
-    // We split one frame into multiple segments. When all segments are written, the frame is
-    // written.
-    List<ChannelPromise> segmentPromises = new ArrayList<>();
-    GenericFutureListener<Future<Void>> sliceListener =
-        new SliceWriteListener(framePromise, sliceCount);
+    // We split one frame into multiple slices. When all slices are written, the frame is written.
+    List<ChannelPromise> slicePromises = new ArrayList<>(sliceCount);
     for (int i = 0; i < sliceCount; i++) {
-      ChannelPromise segmentPromise = context.newPromise();
-      segmentPromise.addListener(sliceListener);
-      segmentPromises.add(segmentPromise);
+      slicePromises.add(context.newPromise());
     }
-    return segmentPromises;
+    GenericFutureListener<Future<Void>> sliceListener =
+        new SliceWriteListener(framePromise, slicePromises);
+    for (int i = 0; i < sliceCount; i++) {
+      slicePromises.get(i).addListener(sliceListener);
+    }
+    return slicePromises;
   }
 
   @Override
@@ -143,30 +143,33 @@ public class ByteBufSegmentBuilder extends SegmentBuilder<ByteBuf, ChannelPromis
   static class SliceWriteListener implements GenericFutureListener<Future<Void>> {
 
     private final ChannelPromise parentPromise;
+    private final List<ChannelPromise> slicePromises;
 
     // All slices are written to the same channel, and the segment is built from the Flusher which
     // also runs on the same event loop, so we don't need synchronization.
     private int remainingSlices;
-    private boolean alreadyFailed;
 
-    SliceWriteListener(@NonNull ChannelPromise parentPromise, int remainingSlices) {
+    SliceWriteListener(@NonNull ChannelPromise parentPromise, List<ChannelPromise> slicePromises) {
       this.parentPromise = parentPromise;
-      this.remainingSlices = remainingSlices;
+      this.slicePromises = slicePromises;
+      this.remainingSlices = slicePromises.size();
     }
 
     @Override
     public void operationComplete(@NonNull Future<Void> future) {
-      if (!alreadyFailed) {
+      if (!parentPromise.isDone()) {
         if (future.isSuccess()) {
           remainingSlices -= 1;
           if (remainingSlices == 0) {
             parentPromise.setSuccess();
           }
         } else {
-          // No need to wait for the outcome of the other slices really. Fail immediately and we'll
-          // ignore them.
+          // If any slice fails, we can immediately mark the whole frame as failed:
           parentPromise.setFailure(future.cause());
-          alreadyFailed = true;
+          // Cancel any remaining slice, Netty will not send the bytes.
+          for (ChannelPromise slicePromise : slicePromises) {
+            slicePromise.cancel(/*Netty ignores this*/ false);
+          }
         }
       }
     }
