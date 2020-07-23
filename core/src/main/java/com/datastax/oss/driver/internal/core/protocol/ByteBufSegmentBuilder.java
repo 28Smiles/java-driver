@@ -15,6 +15,7 @@
  */
 package com.datastax.oss.driver.internal.core.protocol;
 
+import com.datastax.oss.driver.shaded.guava.common.collect.ImmutableList;
 import com.datastax.oss.protocol.internal.Frame;
 import com.datastax.oss.protocol.internal.FrameCodec;
 import com.datastax.oss.protocol.internal.PrimitiveCodec;
@@ -56,15 +57,16 @@ public class ByteBufSegmentBuilder extends SegmentBuilder<ByteBuf, ChannelPromis
     // We concatenate multiple frames into one segment. When the segment is written, all the frames
     // are written.
     ChannelPromise segmentPromise = context.newPromise();
+    ImmutableList<ChannelPromise> dependents = ImmutableList.copyOf(framePromises);
     segmentPromise.addListener(
         future -> {
           if (future.isSuccess()) {
-            for (ChannelPromise framePromise : framePromises) {
+            for (ChannelPromise framePromise : dependents) {
               framePromise.setSuccess();
             }
           } else {
             Throwable cause = future.cause();
-            for (ChannelPromise framePromise : framePromises) {
+            for (ChannelPromise framePromise : dependents) {
               framePromise.setFailure(cause);
             }
           }
