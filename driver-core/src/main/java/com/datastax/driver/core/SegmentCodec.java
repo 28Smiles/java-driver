@@ -192,7 +192,7 @@ class SegmentCodec {
       payload = encodedPayload;
     }
 
-    return Segment.incoming(payload, header.isSelfContained);
+    return new Segment(payload, header.isSelfContained);
   }
 
   /** Temporary holder for header data. During decoding, it is convenient to store it separately. */

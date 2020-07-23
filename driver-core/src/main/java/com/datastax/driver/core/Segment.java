@@ -16,9 +16,6 @@
 package com.datastax.driver.core;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.channel.ChannelFutureListener;
-import java.util.Collections;
-import java.util.List;
 
 /**
  * A container of {@link Frame}s in protocol v5 and above. This is a new protocol construct that
@@ -45,24 +42,12 @@ class Segment {
 
   static int MAX_PAYLOAD_LENGTH = 128 * 1024 - 1;
 
-  public static Segment outgoing(
-      ByteBuf payload, boolean isSelfContained, List<ChannelFutureListener> writeListeners) {
-    return new Segment(payload, isSelfContained, writeListeners);
-  }
-
-  public static Segment incoming(ByteBuf payload, boolean isSelfContained) {
-    return new Segment(payload, isSelfContained, Collections.<ChannelFutureListener>emptyList());
-  }
-
   private final ByteBuf payload;
   private final boolean isSelfContained;
-  private final List<ChannelFutureListener> writeListeners;
 
-  private Segment(
-      ByteBuf payload, boolean isSelfContained, List<ChannelFutureListener> writeListeners) {
+  Segment(ByteBuf payload, boolean isSelfContained) {
     this.payload = payload;
     this.isSelfContained = isSelfContained;
-    this.writeListeners = writeListeners;
   }
 
   public ByteBuf getPayload() {
@@ -71,14 +56,5 @@ class Segment {
 
   public boolean isSelfContained() {
     return isSelfContained;
-  }
-
-  /**
-   * A list of listeners to notify when the segment has been written to a connection.
-   *
-   * <p>This only applies to outgoing segments.
-   */
-  public List<ChannelFutureListener> getWriteListeners() {
-    return writeListeners;
   }
 }

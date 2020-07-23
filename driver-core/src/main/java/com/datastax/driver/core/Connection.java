@@ -61,16 +61,14 @@ import io.netty.handler.codec.DecoderException;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.timeout.IdleStateEvent;
 import io.netty.handler.timeout.IdleStateHandler;
-import io.netty.util.AttributeKey;
 import io.netty.util.Timeout;
 import io.netty.util.Timer;
 import io.netty.util.TimerTask;
 import io.netty.util.concurrent.GlobalEventExecutor;
 import java.lang.ref.WeakReference;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -98,9 +96,6 @@ class Connection {
       SystemProperties.getBoolean("com.datastax.driver.DISABLE_COALESCING", false);
   private static final int FLUSHER_SCHEDULE_PERIOD_NS =
       SystemProperties.getInt("com.datastax.driver.FLUSHER_SCHEDULE_PERIOD_NS", 10000);
-
-  private static final AttributeKey<RequestWriter> REQUEST_WRITER_KEY =
-      AttributeKey.newInstance("request_writer");
 
   enum State {
     OPEN,
@@ -229,7 +224,6 @@ class Connection {
                   logger.debug(
                       "{} Connection established, initializing transport", Connection.this);
                   channel.closeFuture().addListener(new ChannelCloseListener());
-                  channel.attr(REQUEST_WRITER_KEY).set(new LegacyRequestWriter(channel));
                   channelReadyFuture.set(null);
                 }
               }
@@ -788,8 +782,6 @@ class Connection {
     writer.incrementAndGet();
 
     if (DISABLE_COALESCING) {
-      // Note that this only works for protocol v4 and below. Starting with v5, the flusher *must*
-      // be enabled, because that's where the higher-level protocol "segments" are assembled.
       channel.writeAndFlush(request).addListener(writeHandler(request, handler));
     } else {
       flush(new FlushItem(channel, request, writeHandler(request, handler)));
@@ -1139,7 +1131,7 @@ class Connection {
     final WeakReference<EventLoop> eventLoopRef;
     final Queue<FlushItem> queued = new ConcurrentLinkedQueue<FlushItem>();
     final AtomicBoolean running = new AtomicBoolean(false);
-    final Map<Channel, RequestWriter> requestWriters = new HashMap<Channel, RequestWriter>();
+    final HashSet<Channel> channels = new HashSet<Channel>();
 
     private Flusher(EventLoop eventLoop) {
       this.eventLoopRef = new WeakReference<EventLoop>(eventLoop);
@@ -1159,20 +1151,14 @@ class Connection {
       while (null != (flush = queued.poll())) {
         Channel channel = flush.channel;
         if (channel.isActive()) {
-          RequestWriter writer = requestWriters.get(channel);
-          if (writer == null) {
-            writer = channel.attr(REQUEST_WRITER_KEY).get();
-            requestWriters.put(channel, writer);
-          }
-          writer.addRequest(((Message.Request) flush.request), flush.listener);
+          channels.add(channel);
+          channel.write(flush.request).addListener(flush.listener);
         }
       }
 
       // Always flush what we have (don't artificially delay to try to coalesce more messages)
-      for (RequestWriter writer : requestWriters.values()) {
-        writer.flush();
-      }
-      requestWriters.clear();
+      for (Channel channel : channels) channel.flush();
+      channels.clear();
 
       // either reschedule or cancel
       running.set(false);
@@ -1186,64 +1172,6 @@ class Connection {
           eventLoop.execute(this);
         }
       }
-    }
-  }
-
-  /** Abstracts the logic of writing requests to a channel in the flusher. */
-  interface RequestWriter {
-    /** The caller <b>must</b> invoke {@link #flush()} after the last request. */
-    void addRequest(Message.Request request, ChannelFutureListener writeListener);
-
-    void flush();
-  }
-
-  private static class LegacyRequestWriter implements RequestWriter {
-
-    private final Channel channel;
-
-    private LegacyRequestWriter(Channel channel) {
-      this.channel = channel;
-    }
-
-    @Override
-    public void addRequest(Message.Request request, ChannelFutureListener writeListener) {
-      channel.write(request).addListener(writeListener);
-    }
-
-    @Override
-    public void flush() {
-      channel.flush();
-    }
-  }
-
-  private static class V5RequestWriter extends SegmentBuilder {
-
-    private final Channel channel;
-
-    public V5RequestWriter(Channel channel, Message.ProtocolEncoder requestEncoder) {
-      super(channel.alloc(), requestEncoder);
-      this.channel = channel;
-    }
-
-    @Override
-    void processSegment(final Segment segment) {
-      channel
-          .write(segment)
-          .addListener(
-              new ChannelFutureListener() {
-                @Override
-                public void operationComplete(ChannelFuture future) throws Exception {
-                  for (ChannelFutureListener messageListener : segment.getWriteListeners()) {
-                    messageListener.operationComplete(future);
-                  }
-                }
-              });
-    }
-
-    @Override
-    public void flush() {
-      super.flush();
-      channel.flush();
     }
   }
 
@@ -1845,20 +1773,21 @@ class Connection {
         new SegmentCodec(
             channel.alloc(), factory.configuration.getProtocolOptions().getCompression());
 
-    // On the outbound path, a new encoder replaces both messageEncoder and frameEncoder
-    SegmentToBytesEncoder segmentToBytesEncoder = new SegmentToBytesEncoder(segmentCodec);
-    pipeline.replace("frameEncoder", "segmentToBytesEncoder", segmentToBytesEncoder);
+    // Outbound: "message -> segment -> bytes" instead of "message -> frame -> bytes"
     Message.ProtocolEncoder requestEncoder =
-        (Message.ProtocolEncoder) pipeline.remove("messageEncoder");
+        (Message.ProtocolEncoder) pipeline.get("messageEncoder");
+    pipeline.replace(
+        "messageEncoder",
+        "messageToSegmentEncoder",
+        new MessageToSegmentEncoder(channel.alloc(), requestEncoder));
+    pipeline.replace(
+        "frameEncoder", "segmentToBytesEncoder", new SegmentToBytesEncoder(segmentCodec));
 
-    // On the inbound path, two new decoders replace frameDecoder
-    BytesToSegmentDecoder bytesToSegmentDecoder = new BytesToSegmentDecoder(segmentCodec);
-    SegmentToFrameDecoder segmentToFrameDecoder = new SegmentToFrameDecoder();
-    pipeline.replace("frameDecoder", "bytesToSegmentDecoder", bytesToSegmentDecoder);
-    pipeline.addAfter("bytesToSegmentDecoder", "segmentToFrameDecoder", segmentToFrameDecoder);
-
-    // We also need to inject new logic into the flusher.
-    channel.attr(REQUEST_WRITER_KEY).set(new V5RequestWriter(channel, requestEncoder));
+    // Inbound: "frame <- segment <- bytes" instead of "frame <- bytes"
+    pipeline.replace(
+        "frameDecoder", "bytesToSegmentDecoder", new BytesToSegmentDecoder(segmentCodec));
+    pipeline.addAfter(
+        "bytesToSegmentDecoder", "segmentToFrameDecoder", new SegmentToFrameDecoder());
   }
 
   /** A component that "owns" a connection, and should be notified when it dies. */

@@ -16,12 +16,14 @@
 package com.datastax.driver.core;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,39 +34,47 @@ import org.slf4j.LoggerFactory;
  *
  * <p>This class is not thread-safe.
  */
-abstract class SegmentBuilder implements Connection.RequestWriter {
+class SegmentBuilder {
 
   private static final Logger logger = LoggerFactory.getLogger(SegmentBuilder.class);
 
-  private static final int INITIAL_PAYLOAD_LENGTH = 4 * 1024;
-
+  private final ChannelHandlerContext context;
   private final ByteBufAllocator allocator;
   private final int maxPayloadLength;
   private final Message.ProtocolEncoder requestEncoder;
 
-  private ByteBuf currentPayload;
-  private List<ChannelFutureListener> currentWriteListeners;
+  private final List<Frame.Header> currentPayloadHeaders = new ArrayList<Frame.Header>();
+  private final List<Message.Request> currentPayloadBodies = new ArrayList<Message.Request>();
+  private final List<ChannelPromise> currentPayloadPromises = new ArrayList<ChannelPromise>();
+  private int currentPayloadLength;
 
-  SegmentBuilder(ByteBufAllocator allocator, Message.ProtocolEncoder requestEncoder) {
-    this(allocator, requestEncoder, Segment.MAX_PAYLOAD_LENGTH);
+  SegmentBuilder(
+      ChannelHandlerContext context,
+      ByteBufAllocator allocator,
+      Message.ProtocolEncoder requestEncoder) {
+    this(context, allocator, requestEncoder, Segment.MAX_PAYLOAD_LENGTH);
   }
 
   /** Exposes the max length for unit tests; in production, this is hard-coded. */
   @VisibleForTesting
   SegmentBuilder(
-      ByteBufAllocator allocator, Message.ProtocolEncoder requestEncoder, int maxPayloadLength) {
+      ChannelHandlerContext context,
+      ByteBufAllocator allocator,
+      Message.ProtocolEncoder requestEncoder,
+      int maxPayloadLength) {
+    this.context = context;
     this.allocator = allocator;
     this.requestEncoder = requestEncoder;
     this.maxPayloadLength = maxPayloadLength;
-
-    resetCurrentPayload();
   }
 
-  /** What to do whenever a full segment is ready. */
-  abstract void processSegment(Segment segment);
-
-  @Override
-  public void addRequest(Message.Request request, ChannelFutureListener writeListener) {
+  /**
+   * Adds a new request. It will be encoded into one or more segments, that will be passed to {@link
+   * #processSegment(Segment, ChannelPromise)} at some point in the future.
+   *
+   * <p>The caller <b>must</b> invoke {@link #flush()} after the last request.
+   */
+  public void addRequest(Message.Request request, ChannelPromise promise) {
 
     // Wrap the request into a legacy frame, append that frame to the payload.
     int frameHeaderLength = Frame.Header.lengthFor(requestEncoder.protocolVersion);
@@ -87,7 +97,6 @@ abstract class SegmentBuilder implements Connection.RequestWriter {
 
       int sliceCount =
           (frameLength / maxPayloadLength) + (frameLength % maxPayloadLength == 0 ? 0 : 1);
-      SliceWriteListener sliceListener = new SliceWriteListener(sliceCount, writeListener);
 
       logger.trace(
           "Splitting large request ({} bytes) into {} segments: {}",
@@ -95,16 +104,18 @@ abstract class SegmentBuilder implements Connection.RequestWriter {
           sliceCount,
           request);
 
+      List<ChannelPromise> segmentPromises = split(promise, sliceCount);
+      int i = 0;
       do {
         ByteBuf part = frame.readSlice(Math.min(maxPayloadLength, frame.readableBytes()));
         part.retain();
-        process(part, false, Collections.<ChannelFutureListener>singletonList(sliceListener));
+        process(part, false, segmentPromises.get(i++));
       } while (frame.isReadable());
       // We've retained each slice, and won't reference this buffer anymore
       frame.release();
     } else {
       // Small request: append to an existing segment, together with other messages.
-      if (currentPayload.readableBytes() + frameLength > maxPayloadLength) {
+      if (currentPayloadLength + frameLength > maxPayloadLength) {
         // Current segment is full, process and start a new one:
         processCurrentPayload();
         resetCurrentPayload();
@@ -112,66 +123,133 @@ abstract class SegmentBuilder implements Connection.RequestWriter {
       // Append frame to current segment
       logger.trace(
           "Adding {}th request to self-contained segment: {}",
-          currentWriteListeners.size() + 1,
+          currentPayloadHeaders.size() + 1,
           request);
-      header.encodeInto(currentPayload);
-      requestEncoder.encode(request, currentPayload);
-      currentWriteListeners.add(writeListener);
+      currentPayloadHeaders.add(header);
+      currentPayloadBodies.add(request);
+      currentPayloadPromises.add(promise);
+      currentPayloadLength += frameLength;
     }
   }
 
-  @Override
+  /**
+   * Signals that we're done adding requests.
+   *
+   * <p>This must be called after adding the last request, it will possibly trigger the generation
+   * of one last segment.
+   */
   public void flush() {
-    if (currentPayload.readableBytes() > 0) {
+    if (currentPayloadLength > 0) {
       processCurrentPayload();
       resetCurrentPayload();
     }
   }
 
-  private void process(
-      ByteBuf payload, boolean isSelfContained, List<ChannelFutureListener> writeListeners) {
-    processSegment(Segment.outgoing(payload, isSelfContained, writeListeners));
+  /** What to do whenever a full segment is ready. */
+  protected void processSegment(Segment segment, ChannelPromise segmentPromise) {
+    context.write(segment, segmentPromise);
+  }
+
+  private void process(ByteBuf payload, boolean isSelfContained, ChannelPromise segmentPromise) {
+    processSegment(new Segment(payload, isSelfContained), segmentPromise);
   }
 
   private void processCurrentPayload() {
-    logger.trace(
-        "Emitting new self-contained segment with {} frame(s)", currentWriteListeners.size());
-    process(currentPayload, true, currentWriteListeners);
+    int requestCount = currentPayloadHeaders.size();
+    assert currentPayloadBodies.size() == requestCount
+        && currentPayloadPromises.size() == requestCount;
+    logger.trace("Emitting new self-contained segment with {} frame(s)", requestCount);
+    ByteBuf payload = this.allocator.ioBuffer(currentPayloadLength);
+    for (int i = 0; i < requestCount; i++) {
+      Frame.Header header = currentPayloadHeaders.get(i);
+      Message.Request request = currentPayloadBodies.get(i);
+      header.encodeInto(payload);
+      requestEncoder.encode(request, payload);
+    }
+    process(payload, true, merge(currentPayloadPromises));
   }
 
   private void resetCurrentPayload() {
-    currentPayload = this.allocator.ioBuffer(INITIAL_PAYLOAD_LENGTH, Segment.MAX_PAYLOAD_LENGTH);
-    currentWriteListeners = new ArrayList<ChannelFutureListener>();
+    currentPayloadHeaders.clear();
+    currentPayloadBodies.clear();
+    currentPayloadPromises.clear();
+    currentPayloadLength = 0;
   }
 
-  /** Notifies the original listener when all slices of a message have been written. */
-  private static class SliceWriteListener implements ChannelFutureListener {
+  // Merges multiple promises into a single one, that will notify all of them when done.
+  // This is used when multiple requests are sent as a single segment.
+  private ChannelPromise merge(List<ChannelPromise> framePromises) {
+    if (framePromises.size() == 1) {
+      return framePromises.get(0);
+    }
+    ChannelPromise segmentPromise = context.newPromise();
+    final ImmutableList<ChannelPromise> dependents = ImmutableList.copyOf(framePromises);
+    segmentPromise.addListener(
+        new GenericFutureListener<Future<? super Void>>() {
+          @Override
+          public void operationComplete(Future<? super Void> future) throws Exception {
+            if (future.isSuccess()) {
+              for (ChannelPromise framePromise : dependents) {
+                framePromise.setSuccess();
+              }
+            } else {
+              Throwable cause = future.cause();
+              for (ChannelPromise framePromise : dependents) {
+                framePromise.setFailure(cause);
+              }
+            }
+          }
+        });
+    return segmentPromise;
+  }
+
+  // Splits a single promise into multiple ones. The original promise will complete when all the
+  // splits have.
+  // This is used when a single request is sliced into multiple segment.
+  private List<ChannelPromise> split(ChannelPromise framePromise, int sliceCount) {
+    // We split one frame into multiple slices. When all slices are written, the frame is written.
+    List<ChannelPromise> slicePromises = new ArrayList<ChannelPromise>(sliceCount);
+    for (int i = 0; i < sliceCount; i++) {
+      slicePromises.add(context.newPromise());
+    }
+    GenericFutureListener<Future<Void>> sliceListener =
+        new SliceWriteListener(framePromise, slicePromises);
+    for (int i = 0; i < sliceCount; i++) {
+      slicePromises.get(i).addListener(sliceListener);
+    }
+    return slicePromises;
+  }
+
+  static class SliceWriteListener implements GenericFutureListener<Future<Void>> {
+
+    private final ChannelPromise parentPromise;
+    private final List<ChannelPromise> slicePromises;
 
     // All slices are written to the same channel, and the segment is built from the Flusher which
     // also runs on the same event loop, so we don't need synchronization.
     private int remainingSlices;
-    private boolean alreadyFailed;
 
-    private final ChannelFutureListener parentListener;
-
-    public SliceWriteListener(int remainingSlices, ChannelFutureListener parentListener) {
-      this.remainingSlices = remainingSlices;
-      this.parentListener = parentListener;
+    SliceWriteListener(ChannelPromise parentPromise, List<ChannelPromise> slicePromises) {
+      this.parentPromise = parentPromise;
+      this.slicePromises = slicePromises;
+      this.remainingSlices = slicePromises.size();
     }
 
     @Override
-    public void operationComplete(ChannelFuture future) throws Exception {
-      if (!alreadyFailed) {
+    public void operationComplete(Future<Void> future) {
+      if (!parentPromise.isDone()) {
         if (future.isSuccess()) {
           remainingSlices -= 1;
           if (remainingSlices == 0) {
-            parentListener.operationComplete(future);
+            parentPromise.setSuccess();
           }
         } else {
-          // No need to wait for the outcome of the other slices really. Fail immediately and we'll
-          // ignore them.
-          parentListener.operationComplete(future);
-          alreadyFailed = true;
+          // If any slice fails, we can immediately mark the whole frame as failed:
+          parentPromise.setFailure(future.cause());
+          // Cancel any remaining slice, Netty will not send the bytes.
+          for (ChannelPromise slicePromise : slicePromises) {
+            slicePromise.cancel(/*Netty ignores this*/ false);
+          }
         }
       }
     }

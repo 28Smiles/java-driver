@@ -16,22 +16,21 @@
 package com.datastax.driver.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Matchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.DefaultChannelPromise;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.embedded.EmbeddedChannel;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
+import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 
 public class SegmentBuilderTest {
@@ -59,173 +58,207 @@ public class SegmentBuilderTest {
               Integer.MIN_VALUE),
           false);
 
-  // We need this to build promises in the tests
-  private static final Channel MOCK_CHANNEL = new EmbeddedChannel();
+  private static final EmbeddedChannel MOCK_CHANNEL = new EmbeddedChannel();
+  @Mock private ChannelHandlerContext context;
+
+  @BeforeMethod
+  public void setup() {
+    MockitoAnnotations.initMocks(this);
+
+    // This is the only method called by our test implementation
+    when(context.newPromise())
+        .thenAnswer(
+            new Answer<ChannelPromise>() {
+              @Override
+              public ChannelPromise answer(InvocationOnMock invocation) {
+                return MOCK_CHANNEL.newPromise();
+              }
+            });
+  }
 
   @Test(groups = "unit")
   public void should_concatenate_frames_when_under_limit() {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
-    builder.addRequest(_51B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise1 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise1);
+    ChannelPromise requestPromise2 = newPromise();
+    builder.addRequest(_51B_REQUEST, requestPromise2);
     // Nothing produced yet since we would still have room for more frames
     assertThat(builder.segments).isEmpty();
 
     builder.flush();
     assertThat(builder.segments).hasSize(1);
+    assertThat(builder.segmentPromises).hasSize(1);
     Segment segment = builder.segments.get(0);
     assertThat(segment.getPayload().readableBytes()).isEqualTo(38 + 51);
     assertThat(segment.isSelfContained()).isTrue();
-    assertThat(segment.getWriteListeners()).hasSize(2);
+    ChannelPromise segmentPromise = builder.segmentPromises.get(0);
+    assertForwards(segmentPromise, requestPromise1, requestPromise2);
   }
 
   @Test(groups = "unit")
   public void should_start_new_segment_when_over_limit() {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
-    builder.addRequest(_51B_REQUEST, mockWriteListener());
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise1 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise1);
+    ChannelPromise requestPromise2 = newPromise();
+    builder.addRequest(_51B_REQUEST, requestPromise2);
+    ChannelPromise requestPromise3 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise3);
     // Adding the 3rd frame brings the total size over 100, so a first segment should be emitted
     // with the first two messages:
     assertThat(builder.segments).hasSize(1);
 
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise4 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise4);
     builder.flush();
     assertThat(builder.segments).hasSize(2);
 
     Segment segment1 = builder.segments.get(0);
     assertThat(segment1.getPayload().readableBytes()).isEqualTo(38 + 51);
     assertThat(segment1.isSelfContained()).isTrue();
-    assertThat(segment1.getWriteListeners()).hasSize(2);
+    ChannelPromise segmentPromise1 = builder.segmentPromises.get(0);
+    assertForwards(segmentPromise1, requestPromise1, requestPromise2);
     Segment segment2 = builder.segments.get(1);
     assertThat(segment2.getPayload().readableBytes()).isEqualTo(38 + 38);
     assertThat(segment2.isSelfContained()).isTrue();
-    assertThat(segment2.getWriteListeners()).hasSize(2);
+    ChannelPromise segmentPromise2 = builder.segmentPromises.get(1);
+    assertForwards(segmentPromise2, requestPromise3, requestPromise4);
   }
 
   @Test(groups = "unit")
   public void should_start_new_segment_when_at_limit() {
-    TestSegmentBuilder builder = new TestSegmentBuilder(38 + 51);
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 38 + 51);
 
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
-    builder.addRequest(_51B_REQUEST, mockWriteListener());
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise1 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise1);
+    ChannelPromise requestPromise2 = newPromise();
+    builder.addRequest(_51B_REQUEST, requestPromise2);
+    ChannelPromise requestPromise3 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise3);
     assertThat(builder.segments).hasSize(1);
 
-    builder.addRequest(_51B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise4 = newPromise();
+    builder.addRequest(_51B_REQUEST, requestPromise4);
     builder.flush();
     assertThat(builder.segments).hasSize(2);
 
     Segment segment1 = builder.segments.get(0);
     assertThat(segment1.getPayload().readableBytes()).isEqualTo(38 + 51);
     assertThat(segment1.isSelfContained()).isTrue();
-    assertThat(segment1.getWriteListeners()).hasSize(2);
+    ChannelPromise segmentPromise1 = builder.segmentPromises.get(0);
+    assertForwards(segmentPromise1, requestPromise1, requestPromise2);
     Segment segment2 = builder.segments.get(1);
     assertThat(segment2.getPayload().readableBytes()).isEqualTo(38 + 51);
     assertThat(segment2.isSelfContained()).isTrue();
-    assertThat(segment2.getWriteListeners()).hasSize(2);
+    ChannelPromise segmentPromise2 = builder.segmentPromises.get(1);
+    assertForwards(segmentPromise2, requestPromise3, requestPromise4);
   }
 
   @Test(groups = "unit")
-  public void should_split_large_frame() throws Exception {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+  public void should_split_large_frame() {
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    ChannelFutureListener parentListener = mockWriteListener();
-    builder.addRequest(_1KB_REQUEST, parentListener);
+    ChannelPromise parentPromise = newPromise();
+    builder.addRequest(_1KB_REQUEST, parentPromise);
 
     assertThat(builder.segments).hasSize(11);
+    assertThat(builder.segmentPromises).hasSize(11);
     for (int i = 0; i < 11; i++) {
       Segment slice = builder.segments.get(i);
       assertThat(slice.getPayload().readableBytes()).isEqualTo(i == 10 ? 24 : 100);
       assertThat(slice.isSelfContained()).isFalse();
-      assertThat(slice.getWriteListeners()).hasSize(1);
     }
   }
 
   @Test(groups = "unit")
-  public void should_succeed_parent_write_if_all_slices_successful() throws Exception {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+  public void should_succeed_parent_write_if_all_slices_successful() {
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    ChannelFutureListener parentListener = mockWriteListener();
-    builder.addRequest(_1KB_REQUEST, parentListener);
+    ChannelPromise parentPromise = newPromise();
+    builder.addRequest(_1KB_REQUEST, parentPromise);
 
     assertThat(builder.segments).hasSize(11);
+    assertThat(builder.segmentPromises).hasSize(11);
 
-    for (int i = 0; i < 10; i++) {
-      Segment slice = builder.segments.get(i);
-      slice.getWriteListeners().get(0).operationComplete(mockSuccessfulFuture());
-      verify(parentListener, never()).operationComplete(any(ChannelFuture.class));
+    for (int i = 0; i < 11; i++) {
+      assertThat(parentPromise.isDone()).isFalse();
+      builder.segmentPromises.get(i).setSuccess();
     }
 
-    Segment lastSlice = builder.segments.get(10);
-    ChannelFuture lastFuture = mockSuccessfulFuture();
-    lastSlice.getWriteListeners().get(0).operationComplete(lastFuture);
-    verify(parentListener).operationComplete(lastFuture);
+    assertThat(parentPromise.isDone()).isTrue();
   }
 
   @Test(groups = "unit")
-  public void should_fail_parent_write_if_any_slice_fails() throws Exception {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+  public void should_fail_parent_write_if_any_slice_fails() {
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    ChannelFutureListener parentListener = mockWriteListener();
-    builder.addRequest(_1KB_REQUEST, parentListener);
+    ChannelPromise parentPromise = newPromise();
+    builder.addRequest(_1KB_REQUEST, parentPromise);
 
     assertThat(builder.segments).hasSize(11);
 
+    // Complete a few slices successfully
     for (int i = 0; i < 5; i++) {
-      Segment slice = builder.segments.get(i);
-      slice.getWriteListeners().get(0).operationComplete(mockSuccessfulFuture());
-      verify(parentListener, never()).operationComplete(any(ChannelFuture.class));
+      builder.segmentPromises.get(i).setSuccess();
     }
+    assertThat(parentPromise.isDone()).isFalse();
 
-    ChannelFuture failedFuture = mockFailedFuture();
-    Segment failingSlice = builder.segments.get(5);
-    failingSlice.getWriteListeners().get(0).operationComplete(failedFuture);
-    verify(parentListener).operationComplete(failedFuture);
+    // Fail a slice, the parent should fail immediately
+    Exception mockException = new Exception("test");
+    builder.segmentPromises.get(5).setFailure(mockException);
+    assertThat(parentPromise.isDone()).isTrue();
+    assertThat(parentPromise.cause()).isEqualTo(mockException);
 
+    // The remaining slices should have been cancelled
     for (int i = 6; i < 11; i++) {
-      Segment slice = builder.segments.get(i);
-      slice.getWriteListeners().get(0).operationComplete(mockSuccessfulFuture());
+      assertThat(builder.segmentPromises.get(i).isCancelled()).isTrue();
     }
-    verifyNoMoreInteractions(parentListener);
   }
 
   @Test(groups = "unit")
   public void should_split_large_frame_when_exact_multiple() {
-    TestSegmentBuilder builder = new TestSegmentBuilder(256);
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 256);
 
-    ChannelFutureListener parentListener = mockWriteListener();
-    builder.addRequest(_1KB_REQUEST, parentListener);
+    ChannelPromise parentPromise = newPromise();
+    builder.addRequest(_1KB_REQUEST, parentPromise);
 
     assertThat(builder.segments).hasSize(4);
+    assertThat(builder.segmentPromises).hasSize(4);
     for (int i = 0; i < 4; i++) {
       Segment slice = builder.segments.get(i);
       assertThat(slice.getPayload().readableBytes()).isEqualTo(256);
       assertThat(slice.isSelfContained()).isFalse();
-      assertThat(slice.getWriteListeners()).hasSize(1);
     }
   }
 
   @Test(groups = "unit")
   public void should_mix_small_frames_and_large_frames() {
-    TestSegmentBuilder builder = new TestSegmentBuilder(100);
+    TestSegmentBuilder builder = new TestSegmentBuilder(context, 100);
 
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
-    builder.addRequest(_51B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise1 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise1);
+    ChannelPromise requestPromise2 = newPromise();
+    builder.addRequest(_51B_REQUEST, requestPromise2);
 
     // Large frame: process immediately, does not impact accumulated small frames
-    builder.addRequest(_1KB_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise3 = newPromise();
+    builder.addRequest(_1KB_REQUEST, requestPromise3);
     assertThat(builder.segments).hasSize(11);
 
     // Another small frames bring us above the limit
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise4 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise4);
     assertThat(builder.segments).hasSize(12);
 
     // One last frame and finish
-    builder.addRequest(_38B_REQUEST, mockWriteListener());
+    ChannelPromise requestPromise5 = newPromise();
+    builder.addRequest(_38B_REQUEST, requestPromise5);
     builder.flush();
     assertThat(builder.segments).hasSize(13);
+    assertThat(builder.segmentPromises).hasSize(13);
 
     for (int i = 0; i < 11; i++) {
       Segment slice = builder.segments.get(i);
@@ -236,39 +269,43 @@ public class SegmentBuilderTest {
     Segment smallMessages1 = builder.segments.get(11);
     assertThat(smallMessages1.getPayload().readableBytes()).isEqualTo(38 + 51);
     assertThat(smallMessages1.isSelfContained()).isTrue();
+    ChannelPromise segmentPromise1 = builder.segmentPromises.get(11);
+    assertForwards(segmentPromise1, requestPromise1, requestPromise2);
     Segment smallMessages2 = builder.segments.get(12);
     assertThat(smallMessages2.getPayload().readableBytes()).isEqualTo(38 + 38);
     assertThat(smallMessages2.isSelfContained()).isTrue();
+    ChannelPromise segmentPromise2 = builder.segmentPromises.get(12);
+    assertForwards(segmentPromise2, requestPromise4, requestPromise5);
   }
 
-  private static ChannelFutureListener mockWriteListener() {
-    return mock(ChannelFutureListener.class);
+  private static ChannelPromise newPromise() {
+    return MOCK_CHANNEL.newPromise();
   }
 
-  private static ChannelFuture mockSuccessfulFuture() {
-    DefaultChannelPromise future = new DefaultChannelPromise(MOCK_CHANNEL);
-    future.setSuccess();
-    return future;
+  private void assertForwards(ChannelPromise segmentPromise, ChannelPromise... requestPromises) {
+    for (ChannelPromise requestPromise : requestPromises) {
+      assertThat(requestPromise.isDone()).isFalse();
+    }
+    segmentPromise.setSuccess();
+    for (ChannelPromise requestPromise : requestPromises) {
+      assertThat(requestPromise.isSuccess()).isTrue();
+    }
   }
 
-  private static ChannelFuture mockFailedFuture() {
-    DefaultChannelPromise future = new DefaultChannelPromise(MOCK_CHANNEL);
-    future.setFailure(new RuntimeException("mock failure"));
-    return future;
-  }
-
-  // Test implementation that simply stores segment in the order they were produced.
+  // Test implementation that simply stores segments and promises in the order they were produced.
   static class TestSegmentBuilder extends SegmentBuilder {
 
     List<Segment> segments = new ArrayList<Segment>();
+    List<ChannelPromise> segmentPromises = new ArrayList<ChannelPromise>();
 
-    TestSegmentBuilder(int maxPayloadLength) {
-      super(ByteBufAllocator.DEFAULT, REQUEST_ENCODER, maxPayloadLength);
+    TestSegmentBuilder(ChannelHandlerContext context, int maxPayloadLength) {
+      super(context, ByteBufAllocator.DEFAULT, REQUEST_ENCODER, maxPayloadLength);
     }
 
     @Override
-    void processSegment(Segment segment) {
+    protected void processSegment(Segment segment, ChannelPromise segmentPromise) {
       segments.add(segment);
+      segmentPromises.add(segmentPromise);
     }
   }
 }

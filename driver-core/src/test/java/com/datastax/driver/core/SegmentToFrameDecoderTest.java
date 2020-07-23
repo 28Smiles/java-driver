@@ -71,7 +71,7 @@ public class SegmentToFrameDecoderTest {
     appendFrame(SMALL_HEADER_1, SMALL_BODY_1, payload);
     appendFrame(SMALL_HEADER_2, SMALL_BODY_2, payload);
 
-    channel.writeInbound(Segment.incoming(payload, true));
+    channel.writeInbound(new Segment(payload, true));
 
     Frame frame1 = (Frame) channel.readInbound();
     Header header1 = frame1.header;
@@ -95,7 +95,7 @@ public class SegmentToFrameDecoderTest {
       ByteBuf payload =
           encodedFrame.readSlice(
               Math.min(Segment.MAX_PAYLOAD_LENGTH, encodedFrame.readableBytes()));
-      channel.writeInbound(Segment.incoming(payload, false));
+      channel.writeInbound(new Segment(payload, false));
     } while (encodedFrame.isReadable());
 
     Frame frame = (Frame) channel.readInbound();
