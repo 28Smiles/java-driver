@@ -13,21 +13,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.metrics.microprofile;
+package com.datastax.oss.driver.api.metrics.micrometer;
 
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.api.core.session.SessionBuilder;
-import org.eclipse.microprofile.metrics.MetricRegistry;
+import com.datastax.oss.driver.internal.metrics.micrometer.MicrometerDriverContext;
+import io.micrometer.core.instrument.MeterRegistry;
 
-public class MicroProfileMetricsSessionBuilder
-    extends SessionBuilder<MicroProfileMetricsSessionBuilder, CqlSession> {
+public class MicrometerMetricsSessionBuilder
+    extends SessionBuilder<MicrometerMetricsSessionBuilder, CqlSession> {
 
-  private MetricRegistry registry;
+  private MeterRegistry registry;
 
-  public MicroProfileMetricsSessionBuilder withMetricRegistry(MetricRegistry registry) {
+  public MicrometerMetricsSessionBuilder withMeterRegistry(MeterRegistry registry) {
     this.registry = registry;
     return this;
   }
@@ -40,6 +41,6 @@ public class MicroProfileMetricsSessionBuilder
   @Override
   protected DriverContext buildContext(
       DriverConfigLoader configLoader, ProgrammaticArguments programmaticArguments) {
-    return new MicroProfileDriverContext(configLoader, programmaticArguments, registry);
+    return new MicrometerDriverContext(configLoader, programmaticArguments, registry);
   }
 }

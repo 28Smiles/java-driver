@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.metrics.microprofile;
+package com.datastax.oss.driver.internal.metrics.micrometer;
 
 import com.datastax.dse.driver.api.core.metrics.DseSessionMetric;
 import com.datastax.oss.driver.api.core.context.DriverContext;
@@ -30,48 +30,32 @@ import com.datastax.oss.driver.internal.core.session.throttling.ConcurrencyLimit
 import com.datastax.oss.driver.internal.core.session.throttling.RateLimitingRequestThrottler;
 import com.datastax.oss.driver.shaded.guava.common.cache.Cache;
 import edu.umd.cs.findbugs.annotations.Nullable;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
-import org.eclipse.microprofile.metrics.Gauge;
-import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class MicroProfileSessionMetricUpdater extends MicroProfileMetricUpdater<SessionMetric>
+public class MicrometerSessionMetricUpdater extends MicrometerMetricUpdater<SessionMetric>
     implements SessionMetricUpdater {
 
-  private static final Logger LOG = LoggerFactory.getLogger(MicroProfileSessionMetricUpdater.class);
+  private static final Logger LOG = LoggerFactory.getLogger(MicrometerSessionMetricUpdater.class);
 
   private final String metricNamePrefix;
 
-  public MicroProfileSessionMetricUpdater(
-      Set<SessionMetric> enabledMetrics, MetricRegistry registry, DriverContext driverContext) {
+  public MicrometerSessionMetricUpdater(
+      Set<SessionMetric> enabledMetrics, MeterRegistry registry, DriverContext driverContext) {
     super(enabledMetrics, registry);
     InternalDriverContext context = (InternalDriverContext) driverContext;
-    this.metricNamePrefix = driverContext.getSessionName() + ".";
+    this.metricNamePrefix = context.getSessionName() + ".";
+
     if (enabledMetrics.contains(DefaultSessionMetric.CONNECTED_NODES)) {
-      this.registry.register(
-          buildFullName(DefaultSessionMetric.CONNECTED_NODES, null),
-          (Gauge<Integer>)
-              () -> {
-                int count = 0;
-                for (Node node : context.getMetadataManager().getMetadata().getNodes().values()) {
-                  if (node.getOpenConnections() > 0) {
-                    count += 1;
-                  }
-                }
-                return count;
-              });
+      registerConnectedNodeGauge(context);
     }
-    ;
     if (enabledMetrics.contains(DefaultSessionMetric.THROTTLING_QUEUE_SIZE)) {
-      this.registry.register(
-          buildFullName(DefaultSessionMetric.THROTTLING_QUEUE_SIZE, null),
-          buildQueueGauge(context.getRequestThrottler(), context.getSessionName()));
+      registerThrottlingQueueGauge(context);
     }
     if (enabledMetrics.contains(DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE)) {
-      this.registry.register(
-          buildFullName(DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE, null),
-          createPreparedStatementsGauge(context));
+      registerPreparedCacheGauge(context);
     }
     initializeTimer(DefaultSessionMetric.CQL_REQUESTS, context.getConfig().getDefaultProfile());
     initializeDefaultCounter(DefaultSessionMetric.CQL_CLIENT_TIMEOUTS, null);
@@ -83,41 +67,65 @@ public class MicroProfileSessionMetricUpdater extends MicroProfileMetricUpdater<
     initializeTimer(DseSessionMetric.GRAPH_REQUESTS, context.getConfig().getDefaultProfile());
   }
 
-  private Gauge<Long> createPreparedStatementsGauge(InternalDriverContext context) {
-    Cache<?, ?> cache = getPreparedStatementCache(context);
-    Gauge<Long> gauge;
-    if (cache == null) {
-      LOG.warn(
-          "[{}] Metric {} is enabled in the config, "
-              + "but it looks like no CQL prepare processor is registered. "
-              + "The gauge will always return 0",
-          context.getSessionName(),
-          DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE.getPath());
-      gauge = () -> 0L;
-    } else {
-      gauge = cache::size;
-    }
-    return gauge;
+  private void registerConnectedNodeGauge(InternalDriverContext context) {
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.CONNECTED_NODES, null),
+        context,
+        c -> {
+          int count = 0;
+          for (Node node : c.getMetadataManager().getMetadata().getNodes().values()) {
+            if (node.getOpenConnections() > 0) {
+              ++count;
+            }
+          }
+          return count;
+        });
+  }
+
+  private void registerThrottlingQueueGauge(InternalDriverContext context) {
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.THROTTLING_QUEUE_SIZE, null),
+        context,
+        c -> {
+          RequestThrottler requestThrottler = c.getRequestThrottler();
+          String logPrefix = c.getSessionName();
+          if (requestThrottler instanceof ConcurrencyLimitingRequestThrottler) {
+            return ((ConcurrencyLimitingRequestThrottler) requestThrottler).getQueueSize();
+          }
+          if (requestThrottler instanceof RateLimitingRequestThrottler) {
+            return ((RateLimitingRequestThrottler) requestThrottler).getQueueSize();
+          }
+          LOG.warn(
+              "[{}] Metric {} does not support {}, it will always return 0",
+              logPrefix,
+              DefaultSessionMetric.THROTTLING_QUEUE_SIZE.getPath(),
+              requestThrottler.getClass().getName());
+          return 0;
+        });
+  }
+
+  private void registerPreparedCacheGauge(InternalDriverContext context) {
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE, null),
+        context,
+        c -> {
+          Cache<?, ?> cache = getPreparedStatementCache(c);
+          if (cache == null) {
+            LOG.warn(
+                "[{}] Metric {} is enabled in the config, "
+                    + "but it looks like no CQL prepare processor is registered. "
+                    + "The gauge will always return 0",
+                context.getSessionName(),
+                DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE.getPath());
+            return 0L;
+          }
+          return cache.size();
+        });
   }
 
   @Override
   public String buildFullName(SessionMetric metric, String profileName) {
     return CASSANDRA_METRICS_PREFIX + "." + metricNamePrefix + metric.getPath();
-  }
-
-  private Gauge<Integer> buildQueueGauge(RequestThrottler requestThrottler, String logPrefix) {
-    if (requestThrottler instanceof ConcurrencyLimitingRequestThrottler) {
-      return ((ConcurrencyLimitingRequestThrottler) requestThrottler)::getQueueSize;
-    } else if (requestThrottler instanceof RateLimitingRequestThrottler) {
-      return ((RateLimitingRequestThrottler) requestThrottler)::getQueueSize;
-    } else {
-      LOG.warn(
-          "[{}] Metric {} does not support {}, it will always return 0",
-          logPrefix,
-          DefaultSessionMetric.THROTTLING_QUEUE_SIZE.getPath(),
-          requestThrottler.getClass().getName());
-      return () -> 0;
-    }
   }
 
   @Nullable

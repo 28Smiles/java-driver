@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.metrics.micrometer;
+package com.datastax.oss.driver.internal.metrics.microprofile;
 
 import com.datastax.dse.driver.api.core.metrics.DseNodeMetric;
 import com.datastax.dse.driver.api.core.metrics.DseSessionMetric;
@@ -23,6 +23,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.metadata.Node;
 import com.datastax.oss.driver.api.core.metrics.DefaultNodeMetric;
 import com.datastax.oss.driver.api.core.metrics.DefaultSessionMetric;
+import com.datastax.oss.driver.api.core.metrics.Metrics;
 import com.datastax.oss.driver.api.core.metrics.NodeMetric;
 import com.datastax.oss.driver.api.core.metrics.SessionMetric;
 import com.datastax.oss.driver.internal.core.context.InternalDriverContext;
@@ -31,28 +32,27 @@ import com.datastax.oss.driver.internal.core.metrics.NodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.NoopNodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.NoopSessionMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.SessionMetricUpdater;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import net.jcip.annotations.ThreadSafe;
+import org.eclipse.microprofile.metrics.MetricRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 @ThreadSafe
-public class MicrometerMetricsFactory implements MetricsFactory {
-
-  private static final Logger LOG = LoggerFactory.getLogger(MicrometerMetricsFactory.class);
+public class MicroProfileMetricsFactory implements MetricsFactory {
+  private static final Logger LOG = LoggerFactory.getLogger(MicroProfileMetricsFactory.class);
 
   private final String logPrefix;
   private final InternalDriverContext context;
   private final Set<NodeMetric> enabledNodeMetrics;
-  private final MeterRegistry registry;
+  private final MetricRegistry registry;
   private final SessionMetricUpdater sessionUpdater;
 
-  public MicrometerMetricsFactory(DriverContext context, MeterRegistry registry) {
+  public MicroProfileMetricsFactory(DriverContext context, MetricRegistry registry) {
     this.logPrefix = context.getSessionName();
     this.context = (InternalDriverContext) context;
 
@@ -63,20 +63,20 @@ public class MicrometerMetricsFactory implements MetricsFactory {
         parseNodeMetricPaths(config.getStringList(DefaultDriverOption.METRICS_NODE_ENABLED));
 
     if (enabledSessionMetrics.isEmpty() && enabledNodeMetrics.isEmpty()) {
-      LOG.debug("[{}] All metrics are disabled, Session.getMetrics will be empty", logPrefix);
+      LOG.debug("[{}] All metrics are disabled.", logPrefix);
       this.registry = null;
       this.sessionUpdater = NoopSessionMetricUpdater.INSTANCE;
     } else {
       this.registry = registry;
       this.sessionUpdater =
-          new MicrometerSessionMetricUpdater(enabledSessionMetrics, this.registry, this.context);
+          new MicroProfileSessionMetricUpdater(enabledSessionMetrics, this.registry, this.context);
     }
   }
 
   @Override
-  public Optional<com.datastax.oss.driver.api.core.metrics.Metrics> getMetrics() {
+  public Optional<Metrics> getMetrics() {
     throw new UnsupportedOperationException(
-        "getMetrics() is not supported with Micrometer. The driver publishes its metrics directly to the global MeterRegistry.");
+        "getMetrics() is not supported with MicroProfile. The driver publishes its metrics directly to the MetricRegistry.");
   }
 
   @Override
@@ -88,7 +88,7 @@ public class MicrometerMetricsFactory implements MetricsFactory {
   public NodeMetricUpdater newNodeUpdater(Node node) {
     return (registry == null)
         ? NoopNodeMetricUpdater.INSTANCE
-        : new MicrometerNodeMetricUpdater(node, enabledNodeMetrics, registry, context);
+        : new MicroProfileNodeMetricUpdater(node, enabledNodeMetrics, registry, context);
   }
 
   protected Set<SessionMetric> parseSessionMetricPaths(List<String> paths) {

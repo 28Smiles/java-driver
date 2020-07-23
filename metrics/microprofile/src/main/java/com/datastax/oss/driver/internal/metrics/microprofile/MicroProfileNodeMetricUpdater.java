@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.metrics.micrometer;
+package com.datastax.oss.driver.internal.metrics.microprofile;
 
 import com.datastax.dse.driver.api.core.metrics.DseNodeMetric;
 import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
@@ -25,19 +25,20 @@ import com.datastax.oss.driver.api.core.metrics.NodeMetric;
 import com.datastax.oss.driver.internal.core.context.InternalDriverContext;
 import com.datastax.oss.driver.internal.core.metrics.NodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.pool.ChannelPool;
-import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
 import java.util.function.Function;
+import org.eclipse.microprofile.metrics.Gauge;
+import org.eclipse.microprofile.metrics.MetricRegistry;
 
-public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMetric>
+public class MicroProfileNodeMetricUpdater extends MicroProfileMetricUpdater<NodeMetric>
     implements NodeMetricUpdater {
 
   private final String metricNamePrefix;
 
-  public MicrometerNodeMetricUpdater(
+  public MicroProfileNodeMetricUpdater(
       Node node,
       Set<NodeMetric> enabledMetrics,
-      MeterRegistry registry,
+      MetricRegistry registry,
       DriverContext driverContext) {
     super(enabledMetrics, registry);
     InternalDriverContext context = (InternalDriverContext) driverContext;
@@ -46,8 +47,9 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
     DriverExecutionProfile config = driverContext.getConfig().getDefaultProfile();
 
     if (enabledMetrics.contains(DefaultNodeMetric.OPEN_CONNECTIONS)) {
-      this.registry.gauge(
-          buildFullName(DefaultNodeMetric.OPEN_CONNECTIONS, null), node.getOpenConnections());
+      this.registry.register(
+          buildFullName(DefaultNodeMetric.OPEN_CONNECTIONS, null),
+          (Gauge<Integer>) node::getOpenConnections);
     }
     initializePoolGauge(
         DefaultNodeMetric.AVAILABLE_STREAMS, node, ChannelPool::getAvailableIds, context);
@@ -94,14 +96,13 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
       Function<ChannelPool, Integer> reading,
       InternalDriverContext context) {
     if (enabledMetrics.contains(metric)) {
-      final String metricName = buildFullName(metric, null);
-      registry.gauge(
-          metricName,
-          context,
-          c -> {
-            ChannelPool pool = c.getPoolManager().getPools().get(node);
-            return (pool == null) ? 0 : reading.apply(pool);
-          });
+      registry.register(
+          buildFullName(metric, null),
+          (Gauge<Integer>)
+              () -> {
+                ChannelPool pool = context.getPoolManager().getPools().get(node);
+                return (pool == null) ? 0 : reading.apply(pool);
+              });
     }
   }
 }

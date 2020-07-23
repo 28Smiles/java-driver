@@ -13,32 +13,34 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.metrics.microprofile;
+package com.datastax.oss.driver.api.metrics.microprofile;
 
+import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
 import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
-import com.datastax.oss.driver.internal.core.context.DefaultDriverContext;
-import com.datastax.oss.driver.internal.core.metrics.MetricsFactory;
+import com.datastax.oss.driver.api.core.session.SessionBuilder;
+import com.datastax.oss.driver.internal.metrics.microprofile.MicroProfileDriverContext;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 
-/**
- * Implementation of {@link DriverContext} that provides for a Micrometer {@link MetricRegistry}.
- */
-public class MicroProfileDriverContext extends DefaultDriverContext {
+public class MicroProfileMetricsSessionBuilder
+    extends SessionBuilder<MicroProfileMetricsSessionBuilder, CqlSession> {
 
-  private final MetricRegistry registry;
+  private MetricRegistry registry;
 
-  public MicroProfileDriverContext(
-      DriverConfigLoader configLoader,
-      ProgrammaticArguments programmaticArguments,
-      MetricRegistry registry) {
-    super(configLoader, programmaticArguments);
+  public MicroProfileMetricsSessionBuilder withMetricRegistry(MetricRegistry registry) {
     this.registry = registry;
+    return this;
   }
 
   @Override
-  protected MetricsFactory buildMetricsFactory() {
-    return new MicroProfileMetricsFactory(this, registry);
+  protected CqlSession wrap(CqlSession defaultSession) {
+    return defaultSession;
+  }
+
+  @Override
+  protected DriverContext buildContext(
+      DriverConfigLoader configLoader, ProgrammaticArguments programmaticArguments) {
+    return new MicroProfileDriverContext(configLoader, programmaticArguments, registry);
   }
 }

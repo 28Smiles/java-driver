@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.datastax.oss.driver.netrics.microprofile;
+package com.datastax.oss.driver.api.netrics.microprofile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -24,11 +24,11 @@ import com.datastax.oss.driver.api.core.metrics.DefaultNodeMetric;
 import com.datastax.oss.driver.api.core.metrics.DefaultSessionMetric;
 import com.datastax.oss.driver.api.core.metrics.NodeMetric;
 import com.datastax.oss.driver.api.core.metrics.SessionMetric;
+import com.datastax.oss.driver.api.metrics.microprofile.MicroProfileMetricsSessionBuilder;
 import com.datastax.oss.driver.api.testinfra.ccm.CcmRule;
 import com.datastax.oss.driver.api.testinfra.session.SessionUtils;
 import com.datastax.oss.driver.categories.ParallelizableTests;
-import com.datastax.oss.driver.metrics.microprofile.MicroProfileMetricUpdater;
-import com.datastax.oss.driver.metrics.microprofile.MicroProfileMetricsSessionBuilder;
+import com.datastax.oss.driver.internal.metrics.microprofile.MicroProfileMetricUpdater;
 import io.smallrye.metrics.MetricsRegistryImpl;
 import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
@@ -47,7 +47,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 @Category(ParallelizableTests.class)
-public class MicroProfileMetricsFactoryTest {
+public class MicroProfileMetricsTest {
 
   @ClassRule public static final CcmRule CCM_RULE = CcmRule.getInstance();
   private static final MetricRegistry METRIC_REGISTRY = new MetricsRegistryImpl();
