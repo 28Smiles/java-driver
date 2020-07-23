@@ -94,8 +94,14 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
       Function<ChannelPool, Integer> reading,
       InternalDriverContext context) {
     if (enabledMetrics.contains(metric)) {
-      ChannelPool pool = context.getPoolManager().getPools().get(node);
-      registry.gauge(buildFullName(metric, null), pool == null ? 0 : reading.apply(pool));
+      final String metricName = buildFullName(metric, null);
+      registry.gauge(
+          metricName,
+          context,
+          c -> {
+            ChannelPool pool = c.getPoolManager().getPools().get(node);
+            return (pool == null) ? 0 : reading.apply(pool);
+          });
     }
   }
 }

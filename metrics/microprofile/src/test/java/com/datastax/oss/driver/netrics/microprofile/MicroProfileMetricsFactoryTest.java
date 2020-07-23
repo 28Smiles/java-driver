@@ -47,7 +47,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 @Category(ParallelizableTests.class)
-public class MicroProfileMetricsFactoryIT {
+public class MicroProfileMetricsFactoryTest {
 
   @ClassRule public static final CcmRule CCM_RULE = CcmRule.getInstance();
   private static final MetricRegistry METRIC_REGISTRY = new MetricsRegistryImpl();

@@ -32,7 +32,6 @@ import com.datastax.oss.driver.shaded.guava.common.cache.Cache;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
-import java.util.function.ToDoubleFunction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -69,68 +68,59 @@ public class MicrometerSessionMetricUpdater extends MicrometerMetricUpdater<Sess
   }
 
   private void registerConnectedNodeGauge(InternalDriverContext context) {
-    final String metricName = buildFullName(DefaultSessionMetric.CONNECTED_NODES, null);
-    ToDoubleFunction<InternalDriverContext> fn =
-        new ToDoubleFunction<InternalDriverContext>() {
-          @Override
-          public double applyAsDouble(InternalDriverContext c) {
-            int count = 0;
-            for (Node node : c.getMetadataManager().getMetadata().getNodes().values()) {
-              if (node.getOpenConnections() > 0) {
-                ++count;
-              }
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.CONNECTED_NODES, null),
+        context,
+        c -> {
+          int count = 0;
+          for (Node node : c.getMetadataManager().getMetadata().getNodes().values()) {
+            if (node.getOpenConnections() > 0) {
+              ++count;
             }
-            return count;
           }
-        };
-    this.registry.gauge(metricName, context, fn);
+          return count;
+        });
   }
 
   private void registerThrottlingQueueGauge(InternalDriverContext context) {
-    final String metricName = buildFullName(DefaultSessionMetric.THROTTLING_QUEUE_SIZE, null);
-    ToDoubleFunction<InternalDriverContext> fn =
-        new ToDoubleFunction<InternalDriverContext>() {
-          @Override
-          public double applyAsDouble(InternalDriverContext c) {
-            RequestThrottler requestThrottler = c.getRequestThrottler();
-            String logPrefix = c.getSessionName();
-            if (requestThrottler instanceof ConcurrencyLimitingRequestThrottler) {
-              return ((ConcurrencyLimitingRequestThrottler) requestThrottler).getQueueSize();
-            }
-            if (requestThrottler instanceof RateLimitingRequestThrottler) {
-              return ((RateLimitingRequestThrottler) requestThrottler).getQueueSize();
-            }
-            LOG.warn(
-                "[{}] Metric {} does not support {}, it will always return 0",
-                logPrefix,
-                DefaultSessionMetric.THROTTLING_QUEUE_SIZE.getPath(),
-                requestThrottler.getClass().getName());
-            return 0;
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.THROTTLING_QUEUE_SIZE, null),
+        context,
+        c -> {
+          RequestThrottler requestThrottler = c.getRequestThrottler();
+          String logPrefix = c.getSessionName();
+          if (requestThrottler instanceof ConcurrencyLimitingRequestThrottler) {
+            return ((ConcurrencyLimitingRequestThrottler) requestThrottler).getQueueSize();
           }
-        };
-    this.registry.gauge(metricName, context, fn);
+          if (requestThrottler instanceof RateLimitingRequestThrottler) {
+            return ((RateLimitingRequestThrottler) requestThrottler).getQueueSize();
+          }
+          LOG.warn(
+              "[{}] Metric {} does not support {}, it will always return 0",
+              logPrefix,
+              DefaultSessionMetric.THROTTLING_QUEUE_SIZE.getPath(),
+              requestThrottler.getClass().getName());
+          return 0;
+        });
   }
 
   private void registerPreparedCacheGauge(InternalDriverContext context) {
-    final String metricName = buildFullName(DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE, null);
-    ToDoubleFunction<InternalDriverContext> fn =
-        new ToDoubleFunction<InternalDriverContext>() {
-          @Override
-          public double applyAsDouble(InternalDriverContext c) {
-            Cache<?, ?> cache = getPreparedStatementCache(c);
-            if (cache == null) {
-              LOG.warn(
-                  "[{}] Metric {} is enabled in the config, "
-                      + "but it looks like no CQL prepare processor is registered. "
-                      + "The gauge will always return 0",
-                  context.getSessionName(),
-                  DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE.getPath());
-              return 0L;
-            }
-            return cache.size();
+    this.registry.gauge(
+        buildFullName(DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE, null),
+        context,
+        c -> {
+          Cache<?, ?> cache = getPreparedStatementCache(c);
+          if (cache == null) {
+            LOG.warn(
+                "[{}] Metric {} is enabled in the config, "
+                    + "but it looks like no CQL prepare processor is registered. "
+                    + "The gauge will always return 0",
+                context.getSessionName(),
+                DefaultSessionMetric.CQL_PREPARED_CACHE_SIZE.getPath());
+            return 0L;
           }
-        };
-    this.registry.gauge(metricName, context, fn);
+          return cache.size();
+        });
   }
 
   @Override

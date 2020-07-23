@@ -29,8 +29,6 @@ import com.datastax.oss.driver.api.testinfra.session.SessionUtils;
 import com.datastax.oss.driver.categories.ParallelizableTests;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
-import io.micrometer.core.instrument.Measurement;
-import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -43,7 +41,7 @@ import org.junit.Test;
 import org.junit.experimental.categories.Category;
 
 @Category(ParallelizableTests.class)
-public class MicrometerMetricsFactoryIT {
+public class MicrometerMetricsFactoryTest {
 
   @ClassRule public static final CcmRule CCM_RULE = CcmRule.getInstance();
   private static final MeterRegistry METER_REGISTRY = new SimpleMeterRegistry();
