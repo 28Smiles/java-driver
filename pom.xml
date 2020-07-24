@@ -79,6 +79,7 @@
     <apacheds.version>2.0.0-M19</apacheds.version>
     <surefire.version>2.22.2</surefire.version>
     <graalapi.version>20.0.0</graalapi.version>
+    <smallrye.version>2.4.2</smallrye.version>
     <skipTests>false</skipTests>
     <skipUnitTests>${skipTests}</skipUnitTests>
   </properties>
@@ -397,6 +398,11 @@
         <groupId>org.graalvm.nativeimage</groupId>
         <artifactId>svm</artifactId>
         <version>${graalapi.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.smallrye</groupId>
+        <artifactId>smallrye-metrics</artifactId>
+        <version>${smallrye.version}</version>
       </dependency>
     </dependencies>
   </dependencyManagement>
