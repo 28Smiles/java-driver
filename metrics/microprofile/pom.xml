@@ -49,11 +49,6 @@
       <version>${microprofile.version}</version>
     </dependency>
     <dependency>
-      <groupId>io.smallrye</groupId>
-      <artifactId>smallrye-metrics</artifactId>
-      <version>${smallrye.version}</version>
-    </dependency>
-    <dependency>
       <groupId>com.datastax.oss</groupId>
       <artifactId>java-driver-core</artifactId>
       <exclusions>
@@ -62,6 +57,12 @@
           <artifactId>metrics-core</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.smallrye</groupId>
+      <artifactId>smallrye-metrics</artifactId>
+      <version>${smallrye.version}</version>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>${project.groupId}</groupId>
