@@ -16,13 +16,9 @@
 package com.datastax.oss.driver.internal.core.metrics;
 
 import com.codahale.metrics.MetricRegistry;
-import com.datastax.dse.driver.api.core.metrics.DseNodeMetric;
-import com.datastax.dse.driver.api.core.metrics.DseSessionMetric;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
 import com.datastax.oss.driver.api.core.metadata.Node;
-import com.datastax.oss.driver.api.core.metrics.DefaultNodeMetric;
-import com.datastax.oss.driver.api.core.metrics.DefaultSessionMetric;
 import com.datastax.oss.driver.api.core.metrics.Metrics;
 import com.datastax.oss.driver.api.core.metrics.NodeMetric;
 import com.datastax.oss.driver.api.core.metrics.SessionMetric;
@@ -34,9 +30,6 @@ import com.datastax.oss.driver.shaded.guava.common.cache.CacheBuilder;
 import com.datastax.oss.driver.shaded.guava.common.cache.RemovalNotification;
 import edu.umd.cs.findbugs.annotations.Nullable;
 import java.time.Duration;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import net.jcip.annotations.ThreadSafe;
@@ -49,7 +42,6 @@ public class DropwizardMetricsFactory implements MetricsFactory {
   private static final Logger LOG = LoggerFactory.getLogger(DropwizardMetricsFactory.class);
   static final Duration LOWEST_ACCEPTABLE_EXPIRE_AFTER = Duration.ofMinutes(5);
 
-  private final String logPrefix;
   private final InternalDriverContext context;
   private final Set<NodeMetric> enabledNodeMetrics;
   private final MetricRegistry registry;
@@ -58,16 +50,16 @@ public class DropwizardMetricsFactory implements MetricsFactory {
   private final Cache<Node, DropwizardNodeMetricUpdater> metricsCache;
 
   public DropwizardMetricsFactory(InternalDriverContext context, Ticker ticker) {
-    this.logPrefix = context.getSessionName();
     this.context = context;
-
+    String logPrefix = context.getSessionName();
     DriverExecutionProfile config = context.getConfig().getDefaultProfile();
     Set<SessionMetric> enabledSessionMetrics =
-        parseSessionMetricPaths(config.getStringList(DefaultDriverOption.METRICS_SESSION_ENABLED));
+        MetricPaths.parseSessionMetricPaths(
+            config.getStringList(DefaultDriverOption.METRICS_SESSION_ENABLED), logPrefix);
     Duration evictionTime = getAndValidateEvictionTime(config, logPrefix);
-
     this.enabledNodeMetrics =
-        parseNodeMetricPaths(config.getStringList(DefaultDriverOption.METRICS_NODE_ENABLED));
+        MetricPaths.parseNodeMetricPaths(
+            config.getStringList(DefaultDriverOption.METRICS_NODE_ENABLED), logPrefix);
 
     metricsCache =
         CacheBuilder.newBuilder()
@@ -135,37 +127,5 @@ public class DropwizardMetricsFactory implements MetricsFactory {
       metricsCache.put(node, dropwizardNodeMetricUpdater);
       return dropwizardNodeMetricUpdater;
     }
-  }
-
-  protected Set<SessionMetric> parseSessionMetricPaths(List<String> paths) {
-    Set<SessionMetric> result = new HashSet<>();
-    for (String path : paths) {
-      try {
-        result.add(DefaultSessionMetric.fromPath(path));
-      } catch (IllegalArgumentException e) {
-        try {
-          result.add(DseSessionMetric.fromPath(path));
-        } catch (IllegalArgumentException e1) {
-          LOG.warn("[{}] Unknown session metric {}, skipping", logPrefix, path);
-        }
-      }
-    }
-    return Collections.unmodifiableSet(result);
-  }
-
-  protected Set<NodeMetric> parseNodeMetricPaths(List<String> paths) {
-    Set<NodeMetric> result = new HashSet<>();
-    for (String path : paths) {
-      try {
-        result.add(DefaultNodeMetric.fromPath(path));
-      } catch (IllegalArgumentException e) {
-        try {
-          result.add(DseNodeMetric.fromPath(path));
-        } catch (IllegalArgumentException e1) {
-          LOG.warn("[{}] Unknown node metric {}, skipping", logPrefix, path);
-        }
-      }
-    }
-    return Collections.unmodifiableSet(result);
   }
 }
