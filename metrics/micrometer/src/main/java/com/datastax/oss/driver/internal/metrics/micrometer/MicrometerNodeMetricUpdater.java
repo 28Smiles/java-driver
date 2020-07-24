@@ -27,19 +27,23 @@ import com.datastax.oss.driver.internal.core.metrics.NodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.pool.ChannelPool;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMetric>
     implements NodeMetricUpdater {
 
   private final String metricNamePrefix;
+  private final Runnable signalMetricUpdated;
 
   public MicrometerNodeMetricUpdater(
       Node node,
       Set<NodeMetric> enabledMetrics,
       MeterRegistry registry,
-      DriverContext driverContext) {
+      DriverContext driverContext,
+      Runnable signalMetricUpdated) {
     super(enabledMetrics, registry);
+    this.signalMetricUpdated = signalMetricUpdated;
     InternalDriverContext context = (InternalDriverContext) driverContext;
     this.metricNamePrefix = buildPrefix(driverContext.getSessionName(), node.getEndPoint());
 
@@ -88,6 +92,30 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
     return sessionName + ".nodes." + endPoint.asMetricPrefix() + ".";
   }
 
+  @Override
+  public void incrementCounter(NodeMetric metric, String profileName, long amount) {
+    signalMetricUpdated.run();
+    super.incrementCounter(metric, profileName, amount);
+  }
+
+  @Override
+  public void updateHistogram(NodeMetric metric, String profileName, long value) {
+    signalMetricUpdated.run();
+    super.updateHistogram(metric, profileName, value);
+  }
+
+  @Override
+  public void markMeter(NodeMetric metric, String profileName, long amount) {
+    signalMetricUpdated.run();
+    super.markMeter(metric, profileName, amount);
+  }
+
+  @Override
+  public void updateTimer(NodeMetric metric, String profileName, long duration, TimeUnit unit) {
+    signalMetricUpdated.run();
+    super.updateTimer(metric, profileName, duration, unit);
+  }
+
   private void initializePoolGauge(
       NodeMetric metric,
       Node node,
@@ -103,5 +131,9 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
             return (pool == null) ? 0 : reading.apply(pool);
           });
     }
+  }
+
+  public void cleanupNodeMetrics() {
+    registry.getMeters().removeIf(metric -> metric.getId().getName().startsWith(metricNamePrefix));
   }
 }

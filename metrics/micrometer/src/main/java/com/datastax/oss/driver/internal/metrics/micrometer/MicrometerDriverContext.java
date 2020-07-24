@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.internal.core.context.DefaultDriverContext;
 import com.datastax.oss.driver.internal.core.metrics.MetricsFactory;
+import com.datastax.oss.driver.shaded.guava.common.base.Ticker;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import io.micrometer.core.instrument.MeterRegistry;
 
@@ -39,6 +40,6 @@ public class MicrometerDriverContext extends DefaultDriverContext {
   @Override
   @NonNull
   protected MetricsFactory buildMetricsFactory() {
-    return new MicrometerMetricsFactory(this, registry);
+    return new MicrometerMetricsFactory(this, registry, Ticker.systemTicker());
   }
 }

@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.internal.core.context.DefaultDriverContext;
 import com.datastax.oss.driver.internal.core.metrics.MetricsFactory;
+import com.datastax.oss.driver.shaded.guava.common.base.Ticker;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 
@@ -41,6 +42,6 @@ public class MicroProfileDriverContext extends DefaultDriverContext {
   @Override
   @NonNull
   protected MetricsFactory buildMetricsFactory() {
-    return new MicroProfileMetricsFactory(this, registry);
+    return new MicroProfileMetricsFactory(this, registry, Ticker.systemTicker());
   }
 }

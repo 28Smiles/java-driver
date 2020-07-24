@@ -28,7 +28,13 @@ import com.datastax.oss.driver.internal.core.metrics.NodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.NoopNodeMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.NoopSessionMetricUpdater;
 import com.datastax.oss.driver.internal.core.metrics.SessionMetricUpdater;
+import com.datastax.oss.driver.shaded.guava.common.annotations.VisibleForTesting;
+import com.datastax.oss.driver.shaded.guava.common.base.Ticker;
+import com.datastax.oss.driver.shaded.guava.common.cache.Cache;
+import com.datastax.oss.driver.shaded.guava.common.cache.CacheBuilder;
+import com.datastax.oss.driver.shaded.guava.common.cache.RemovalNotification;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
 import net.jcip.annotations.ThreadSafe;
@@ -39,13 +45,16 @@ import org.slf4j.LoggerFactory;
 public class MicrometerMetricsFactory implements MetricsFactory {
 
   private static final Logger LOG = LoggerFactory.getLogger(MicrometerMetricsFactory.class);
+  static final Duration LOWEST_ACCEPTABLE_EXPIRE_AFTER = Duration.ofMinutes(5);
 
   private final InternalDriverContext context;
   private final Set<NodeMetric> enabledNodeMetrics;
   private final MeterRegistry registry;
   private final SessionMetricUpdater sessionUpdater;
+  private final Cache<Node, MicrometerNodeMetricUpdater> metricsCache;
 
-  public MicrometerMetricsFactory(InternalDriverContext context, MeterRegistry registry) {
+  public MicrometerMetricsFactory(
+      InternalDriverContext context, MeterRegistry registry, Ticker ticker) {
     this.context = context;
     String logPrefix = context.getSessionName();
     DriverExecutionProfile config = context.getConfig().getDefaultProfile();
@@ -56,6 +65,23 @@ public class MicrometerMetricsFactory implements MetricsFactory {
         MetricPaths.parseNodeMetricPaths(
             config.getStringList(DefaultDriverOption.METRICS_NODE_ENABLED), logPrefix);
 
+    Duration evictionTime = getAndValidateEvictionTime(config, logPrefix);
+
+    metricsCache =
+        CacheBuilder.newBuilder()
+            .ticker(ticker)
+            .expireAfterAccess(evictionTime)
+            .removalListener(
+                (RemovalNotification<Node, MicrometerNodeMetricUpdater> notification) -> {
+                  LOG.debug(
+                      "[{}] Removing metrics for node: {} from cache after {}",
+                      logPrefix,
+                      notification.getKey(),
+                      evictionTime);
+                  notification.getValue().cleanupNodeMetrics();
+                })
+            .build();
+
     if (enabledSessionMetrics.isEmpty() && enabledNodeMetrics.isEmpty()) {
       LOG.debug("[{}] All metrics are disabled, Session.getMetrics will be empty", logPrefix);
       this.registry = null;
@@ -65,6 +91,22 @@ public class MicrometerMetricsFactory implements MetricsFactory {
       this.sessionUpdater =
           new MicrometerSessionMetricUpdater(enabledSessionMetrics, this.registry, this.context);
     }
+  }
+
+  @VisibleForTesting
+  static Duration getAndValidateEvictionTime(DriverExecutionProfile config, String logPrefix) {
+    Duration evictionTime = config.getDuration(DefaultDriverOption.METRICS_NODE_EXPIRE_AFTER);
+
+    if (evictionTime.compareTo(LOWEST_ACCEPTABLE_EXPIRE_AFTER) < 0) {
+      LOG.warn(
+          "[{}] Value too low for {}: {}. Forcing to {} instead.",
+          logPrefix,
+          DefaultDriverOption.METRICS_NODE_EXPIRE_AFTER.getPath(),
+          evictionTime,
+          LOWEST_ACCEPTABLE_EXPIRE_AFTER);
+    }
+
+    return evictionTime;
   }
 
   @Override
@@ -80,8 +122,13 @@ public class MicrometerMetricsFactory implements MetricsFactory {
 
   @Override
   public NodeMetricUpdater newNodeUpdater(Node node) {
-    return (registry == null)
-        ? NoopNodeMetricUpdater.INSTANCE
-        : new MicrometerNodeMetricUpdater(node, enabledNodeMetrics, registry, context);
+    if (registry == null) {
+      return NoopNodeMetricUpdater.INSTANCE;
+    }
+    MicrometerNodeMetricUpdater updater =
+        new MicrometerNodeMetricUpdater(
+            node, enabledNodeMetrics, registry, context, () -> metricsCache.getIfPresent(node));
+    metricsCache.put(node, updater);
+    return updater;
   }
 }
