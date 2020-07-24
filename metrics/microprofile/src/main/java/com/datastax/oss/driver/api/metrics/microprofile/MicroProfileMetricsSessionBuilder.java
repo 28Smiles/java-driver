@@ -21,6 +21,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.api.core.session.SessionBuilder;
 import com.datastax.oss.driver.internal.metrics.microprofile.MicroProfileDriverContext;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 
 public class MicroProfileMetricsSessionBuilder
@@ -28,19 +29,23 @@ public class MicroProfileMetricsSessionBuilder
 
   private MetricRegistry registry;
 
-  public MicroProfileMetricsSessionBuilder withMetricRegistry(MetricRegistry registry) {
+  @NonNull
+  public MicroProfileMetricsSessionBuilder withMetricRegistry(@NonNull MetricRegistry registry) {
     this.registry = registry;
     return this;
   }
 
+  @NonNull
   @Override
-  protected CqlSession wrap(CqlSession defaultSession) {
+  protected CqlSession wrap(@NonNull CqlSession defaultSession) {
     return defaultSession;
   }
 
+  @NonNull
   @Override
   protected DriverContext buildContext(
-      DriverConfigLoader configLoader, ProgrammaticArguments programmaticArguments) {
+      @NonNull DriverConfigLoader configLoader,
+      @NonNull ProgrammaticArguments programmaticArguments) {
     return new MicroProfileDriverContext(configLoader, programmaticArguments, registry);
   }
 }

@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.internal.core.context.DefaultDriverContext;
 import com.datastax.oss.driver.internal.core.metrics.MetricsFactory;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import org.eclipse.microprofile.metrics.MetricRegistry;
 
 /**
@@ -30,14 +31,15 @@ public class MicroProfileDriverContext extends DefaultDriverContext {
   private final MetricRegistry registry;
 
   public MicroProfileDriverContext(
-      DriverConfigLoader configLoader,
-      ProgrammaticArguments programmaticArguments,
-      MetricRegistry registry) {
+      @NonNull DriverConfigLoader configLoader,
+      @NonNull ProgrammaticArguments programmaticArguments,
+      @NonNull MetricRegistry registry) {
     super(configLoader, programmaticArguments);
     this.registry = registry;
   }
 
   @Override
+  @NonNull
   protected MetricsFactory buildMetricsFactory() {
     return new MicroProfileMetricsFactory(this, registry);
   }

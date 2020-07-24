@@ -20,6 +20,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.internal.core.context.DefaultDriverContext;
 import com.datastax.oss.driver.internal.core.metrics.MetricsFactory;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import io.micrometer.core.instrument.MeterRegistry;
 
 /** Implementation of {@link DriverContext} that provides for a Micrometer {@link MeterRegistry}. */
@@ -28,14 +29,15 @@ public class MicrometerDriverContext extends DefaultDriverContext {
   private final MeterRegistry registry;
 
   public MicrometerDriverContext(
-      DriverConfigLoader configLoader,
-      ProgrammaticArguments programmaticArguments,
-      MeterRegistry registry) {
+      @NonNull DriverConfigLoader configLoader,
+      @NonNull ProgrammaticArguments programmaticArguments,
+      @NonNull MeterRegistry registry) {
     super(configLoader, programmaticArguments);
     this.registry = registry;
   }
 
   @Override
+  @NonNull
   protected MetricsFactory buildMetricsFactory() {
     return new MicrometerMetricsFactory(this, registry);
   }

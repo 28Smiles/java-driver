@@ -21,6 +21,7 @@ import com.datastax.oss.driver.api.core.context.DriverContext;
 import com.datastax.oss.driver.api.core.session.ProgrammaticArguments;
 import com.datastax.oss.driver.api.core.session.SessionBuilder;
 import com.datastax.oss.driver.internal.metrics.micrometer.MicrometerDriverContext;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import io.micrometer.core.instrument.MeterRegistry;
 
 public class MicrometerMetricsSessionBuilder
@@ -28,19 +29,23 @@ public class MicrometerMetricsSessionBuilder
 
   private MeterRegistry registry;
 
-  public MicrometerMetricsSessionBuilder withMeterRegistry(MeterRegistry registry) {
+  @NonNull
+  public MicrometerMetricsSessionBuilder withMeterRegistry(@NonNull MeterRegistry registry) {
     this.registry = registry;
     return this;
   }
 
   @Override
-  protected CqlSession wrap(CqlSession defaultSession) {
+  @NonNull
+  protected CqlSession wrap(@NonNull CqlSession defaultSession) {
     return defaultSession;
   }
 
   @Override
+  @NonNull
   protected DriverContext buildContext(
-      DriverConfigLoader configLoader, ProgrammaticArguments programmaticArguments) {
+      @NonNull DriverConfigLoader configLoader,
+      @NonNull ProgrammaticArguments programmaticArguments) {
     return new MicrometerDriverContext(configLoader, programmaticArguments, registry);
   }
 }
