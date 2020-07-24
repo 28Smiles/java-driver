@@ -18,6 +18,7 @@ package com.datastax.oss.driver.internal.metrics.micrometer;
 import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
 import com.datastax.oss.driver.api.core.config.DriverExecutionProfile;
 import com.datastax.oss.driver.api.core.metadata.Node;
+import com.datastax.oss.driver.api.core.metrics.Metrics;
 import com.datastax.oss.driver.api.core.metrics.NodeMetric;
 import com.datastax.oss.driver.api.core.metrics.SessionMetric;
 import com.datastax.oss.driver.internal.core.context.InternalDriverContext;
@@ -67,7 +68,7 @@ public class MicrometerMetricsFactory implements MetricsFactory {
   }
 
   @Override
-  public Optional<com.datastax.oss.driver.api.core.metrics.Metrics> getMetrics() {
+  public Optional<Metrics> getMetrics() {
     throw new UnsupportedOperationException(
         "getMetrics() is not supported with Micrometer. The driver publishes its metrics directly to the global MeterRegistry.");
   }
