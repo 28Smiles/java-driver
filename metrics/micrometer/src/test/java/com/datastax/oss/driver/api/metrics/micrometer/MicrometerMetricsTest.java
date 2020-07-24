@@ -30,6 +30,7 @@ import com.datastax.oss.driver.categories.ParallelizableTests;
 import com.datastax.oss.driver.internal.metrics.micrometer.MicrometerMetricUpdater;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -130,11 +131,11 @@ public class MicrometerMetricsTest {
     }
   }
 
-  private Condition buildTimerCondition(
+  private Condition<Meter> buildTimerCondition(
       String description, String metricPattern, Function<Long, Boolean> verifyFunction) {
-    return new Condition(description) {
+    return new Condition<Meter>(description) {
       @Override
-      public boolean matches(Object obj) {
+      public boolean matches(Meter obj) {
         if (!(obj instanceof Timer)) {
           return false;
         }
@@ -145,11 +146,11 @@ public class MicrometerMetricsTest {
     };
   }
 
-  private Condition buildCounterCondition(
+  private Condition<Meter> buildCounterCondition(
       String description, String metricPattern, Function<Double, Boolean> verifyFunction) {
-    return new Condition(description) {
+    return new Condition<Meter>(description) {
       @Override
-      public boolean matches(Object obj) {
+      public boolean matches(Meter obj) {
         if (!(obj instanceof Counter)) {
           return false;
         }
@@ -160,11 +161,11 @@ public class MicrometerMetricsTest {
     };
   }
 
-  private Condition buildGaugeCondition(
+  private Condition<Meter> buildGaugeCondition(
       String description, String metricPattern, Function<Double, Boolean> verifyFunction) {
-    return new Condition(description) {
+    return new Condition<Meter>(description) {
       @Override
-      public boolean matches(Object obj) {
+      public boolean matches(Meter obj) {
         if (!(obj instanceof Gauge)) {
           return false;
         }

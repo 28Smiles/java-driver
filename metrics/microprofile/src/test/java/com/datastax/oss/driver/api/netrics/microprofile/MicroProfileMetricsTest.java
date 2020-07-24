@@ -186,7 +186,7 @@ public class MicroProfileMetricsTest {
           // Metric is not a Gauge
           return false;
         }
-        final Gauge gauge = (Gauge) metric.getValue();
+        final Gauge<?> gauge = (Gauge<?>) metric.getValue();
         final Number gaugeValue = (Number) gauge.getValue();
         final MetricID id = metric.getKey();
         return verifyFunction.apply(gaugeValue.doubleValue())
