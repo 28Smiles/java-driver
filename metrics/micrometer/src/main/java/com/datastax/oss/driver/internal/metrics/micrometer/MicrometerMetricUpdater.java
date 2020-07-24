@@ -24,7 +24,6 @@ import net.jcip.annotations.ThreadSafe;
 
 @ThreadSafe
 public abstract class MicrometerMetricUpdater<MetricT> implements MetricUpdater<MetricT> {
-  public static final String CASSANDRA_METRICS_PREFIX = "cassandra";
   protected final Set<MetricT> enabledMetrics;
   protected final MeterRegistry registry;
 

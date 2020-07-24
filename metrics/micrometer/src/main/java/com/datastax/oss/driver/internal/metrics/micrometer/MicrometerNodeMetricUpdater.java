@@ -81,7 +81,7 @@ public class MicrometerNodeMetricUpdater extends MicrometerMetricUpdater<NodeMet
 
   @Override
   public String buildFullName(NodeMetric metric, String profileName) {
-    return CASSANDRA_METRICS_PREFIX + "." + metricNamePrefix + metric.getPath();
+    return metricNamePrefix + metric.getPath();
   }
 
   private String buildPrefix(String sessionName, EndPoint endPoint) {

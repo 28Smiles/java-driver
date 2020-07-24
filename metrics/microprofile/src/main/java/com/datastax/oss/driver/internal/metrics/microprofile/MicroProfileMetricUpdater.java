@@ -25,7 +25,6 @@ import org.eclipse.microprofile.metrics.MetricRegistry;
 @ThreadSafe
 public abstract class MicroProfileMetricUpdater<MetricT> implements MetricUpdater<MetricT> {
 
-  public static final String CASSANDRA_METRICS_PREFIX = "cassandra";
   protected final Set<MetricT> enabledMetrics;
   protected final MetricRegistry registry;
 

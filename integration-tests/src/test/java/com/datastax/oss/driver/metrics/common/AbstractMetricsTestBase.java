@@ -27,7 +27,6 @@ import com.datastax.oss.driver.api.core.metrics.SessionMetric;
 import com.datastax.oss.driver.api.core.session.SessionBuilder;
 import com.datastax.oss.driver.api.testinfra.ccm.CcmRule;
 import com.datastax.oss.driver.api.testinfra.session.SessionUtils;
-import com.datastax.oss.driver.internal.metrics.micrometer.MicrometerMetricUpdater;
 import java.util.Collection;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -74,19 +73,11 @@ public abstract class AbstractMetricsTestBase {
   }
 
   protected String buildSessionMetricPattern(SessionMetric metric, CqlSession s) {
-    return MicrometerMetricUpdater.CASSANDRA_METRICS_PREFIX
-        + "\\."
-        + s.getContext().getSessionName()
-        + "\\."
-        + metric.getPath();
+    return s.getContext().getSessionName() + "\\." + metric.getPath();
   }
 
   protected String buildNodeMetricPattern(NodeMetric metric, CqlSession s) {
-    return MicrometerMetricUpdater.CASSANDRA_METRICS_PREFIX
-        + "\\."
-        + s.getContext().getSessionName()
-        + "\\.nodes\\.\\S*\\."
-        + metric.getPath();
+    return s.getContext().getSessionName() + "\\.nodes\\.\\S*\\." + metric.getPath();
   }
 
   private void assertMetricsSize(Collection metrics) {

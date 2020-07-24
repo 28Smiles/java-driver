@@ -102,7 +102,7 @@ public class MicroProfileSessionMetricUpdater extends MicroProfileMetricUpdater<
 
   @Override
   public String buildFullName(SessionMetric metric, String profileName) {
-    return CASSANDRA_METRICS_PREFIX + "." + metricNamePrefix + metric.getPath();
+    return metricNamePrefix + metric.getPath();
   }
 
   private Gauge<Integer> buildQueueGauge(RequestThrottler requestThrottler, String logPrefix) {

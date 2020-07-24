@@ -125,7 +125,7 @@ public class MicrometerSessionMetricUpdater extends MicrometerMetricUpdater<Sess
 
   @Override
   public String buildFullName(SessionMetric metric, String profileName) {
-    return CASSANDRA_METRICS_PREFIX + "." + metricNamePrefix + metric.getPath();
+    return metricNamePrefix + metric.getPath();
   }
 
   @Nullable
