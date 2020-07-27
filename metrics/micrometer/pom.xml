@@ -27,9 +27,6 @@
   <artifactId>java-driver-metrics-micrometer</artifactId>
   <packaging>bundle</packaging>
   <name>DataStax Java driver for Apache Cassandra(R) - Metrics - Micrometer</name>
-  <properties>
-    <micrometer.version>1.5.0</micrometer.version>
-  </properties>
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -45,7 +42,6 @@
     <dependency>
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-core</artifactId>
-      <version>${micrometer.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>

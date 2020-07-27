@@ -27,9 +27,6 @@
   <artifactId>java-driver-metrics-microprofile</artifactId>
   <packaging>bundle</packaging>
   <name>DataStax Java driver for Apache Cassandra(R) - Metrics - Microprofile</name>
-  <properties>
-    <microprofile.version>2.3</microprofile.version>
-  </properties>
   <dependencyManagement>
     <dependencies>
       <dependency>
@@ -45,7 +42,6 @@
     <dependency>
       <groupId>org.eclipse.microprofile.metrics</groupId>
       <artifactId>microprofile-metrics-api</artifactId>
-      <version>${microprofile.version}</version>
     </dependency>
     <dependency>
       <groupId>com.datastax.oss</groupId>
