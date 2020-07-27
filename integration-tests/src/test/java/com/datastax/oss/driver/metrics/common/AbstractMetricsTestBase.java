@@ -47,11 +47,11 @@ public abstract class AbstractMetricsTestBase {
           .map(DefaultNodeMetric::getPath)
           .collect(Collectors.toList());
 
-  protected abstract SessionBuilder getSessionBuilder();
+  protected abstract SessionBuilder<?, ?> getSessionBuilder();
 
   protected abstract void assertMetrics(CqlSession session);
 
-  protected abstract Collection getRegistryMetrics();
+  protected abstract Collection<?> getRegistryMetrics();
 
   @Test
   public void should_expose_metrics() {
@@ -60,7 +60,8 @@ public abstract class AbstractMetricsTestBase {
             .withStringList(DefaultDriverOption.METRICS_SESSION_ENABLED, ENABLED_SESSION_METRICS)
             .withStringList(DefaultDriverOption.METRICS_NODE_ENABLED, ENABLED_NODE_METRICS)
             .build();
-    SessionBuilder builder = getSessionBuilder().addContactEndPoints(CCM_RULE.getContactPoints());
+    SessionBuilder<?, ?> builder =
+        getSessionBuilder().addContactEndPoints(CCM_RULE.getContactPoints());
     try (CqlSession session = (CqlSession) builder.withConfigLoader(loader).build()) {
       for (int i = 0; i < 10; i++) {
         session.execute("SELECT release_version FROM system.local");
@@ -80,7 +81,7 @@ public abstract class AbstractMetricsTestBase {
     return s.getContext().getSessionName() + "\\.nodes\\.\\S*\\." + metric.getPath();
   }
 
-  private void assertMetricsSize(Collection metrics) {
+  private void assertMetricsSize(Collection<?> metrics) {
     assertThat(metrics).hasSize(ENABLED_SESSION_METRICS.size() + ENABLED_NODE_METRICS.size());
   }
 }

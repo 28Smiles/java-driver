@@ -107,12 +107,12 @@ public class MicroProfileMetricsIT extends AbstractMetricsTestBase {
   }
 
   @Override
-  protected SessionBuilder getSessionBuilder() {
+  protected SessionBuilder<?, ?> getSessionBuilder() {
     return new MicroProfileSessionBuilder(METRIC_REGISTRY);
   }
 
   @Override
-  protected Collection getRegistryMetrics() {
+  protected Collection<?> getRegistryMetrics() {
     return METRIC_REGISTRY.getMetrics().entrySet();
   }
 

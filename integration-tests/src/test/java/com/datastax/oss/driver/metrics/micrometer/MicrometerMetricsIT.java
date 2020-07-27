@@ -113,12 +113,12 @@ public class MicrometerMetricsIT extends AbstractMetricsTestBase {
   }
 
   @Override
-  protected SessionBuilder getSessionBuilder() {
+  protected SessionBuilder<?, ?> getSessionBuilder() {
     return new MicrometerSessionBuilder(METER_REGISTRY);
   }
 
   @Override
-  protected Collection getRegistryMetrics() {
+  protected Collection<?> getRegistryMetrics() {
     return METER_REGISTRY.getMeters();
   }
 
